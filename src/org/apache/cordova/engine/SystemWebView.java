@@ -20,12 +20,15 @@
 package org.apache.cordova.engine;
 
 import android.content.Context;
+import android.os.Handler;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
+import android.view.View;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import org.apache.cordova.Config;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.CordovaWebViewEngine;
@@ -51,6 +54,8 @@ public class SystemWebView extends WebView implements CordovaWebViewEngine.Engin
     void init(SystemWebViewEngine parentEngine, CordovaInterface cordova) {
         this.cordova = cordova;
         this.parentEngine = parentEngine;
+        Config.keyboardState = false;
+        
         if (this.viewClient == null) {
             setWebViewClient(new SystemWebViewClient(parentEngine));
         }
@@ -65,6 +70,38 @@ public class SystemWebView extends WebView implements CordovaWebViewEngine.Engin
         return parentEngine != null ? parentEngine.getCordovaWebView() : null;
     }
 
+    @Override
+    protected void onVisibilityChanged(View changedView, int visibility) {
+        if (visibility == View.INVISIBLE) {
+            CordovaWebView cWebView = getCordovaWebView();
+            cWebView.onInvisibilityChanged();
+        }
+        super.onVisibilityChanged(changedView, visibility);
+    }
+    
+    @Override
+    @SuppressWarnings("deprecation") // 用于判断系统键盘是否弹出
+    protected void onSizeChanged(int w, int h, int ow, int oh) {
+        super.onSizeChanged(w, h, ow, oh);
+
+        if (oh == 0) return;
+        /*
+         * interval设置为120，用于判断屏幕像素变化后，点击back键，是否向h5端发送回退消息。
+         *     1.华为手机的back键存在在界面，可以隐藏和显示，屏幕像素变化在110左右；
+         *     2.h5界面的输入框弹出系统键盘，屏幕像素变化在120以上，暂时不应该在向h5端发送消息。
+         */
+        int interval = 120;
+        if (oh - h > interval) {
+            Config.keyboardState = true;
+        } else {
+            new Handler().postDelayed(new Runnable() {
+                @Override public void run() {
+                    Config.keyboardState = false;
+                }
+            }, 200);
+        }   
+    }
+    
     @Override
     public void setWebViewClient(WebViewClient client) {
         viewClient = (SystemWebViewClient)client;

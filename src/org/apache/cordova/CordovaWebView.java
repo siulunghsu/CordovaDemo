@@ -31,7 +31,7 @@ import android.webkit.WebChromeClient.CustomViewCallback;
  * are not expected to implement it.
  */
 public interface CordovaWebView {
-    public static final String CORDOVA_VERSION = "4.1.1";
+    public static final String CORDOVA_VERSION = "6.2.3";
 
     void init(CordovaInterface cordova, List<PluginEntry> pluginEntries, CordovaPreferences preferences);
 
@@ -139,4 +139,8 @@ public interface CordovaWebView {
     Context getContext();
     void loadUrl(String url);
     Object postMessage(String id, Object data);
+    
+    void setBackButtonState(boolean canReturnBackButton);   // 系统键盘
+    void setBackButtonState(boolean canReturnBackButton, CCiProtectFinishCallBack callBack);   // 密码键盘
+    void onInvisibilityChanged();     // 进入后台
 }

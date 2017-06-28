@@ -21,7 +21,6 @@ package org.apache.cordova;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
-import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -72,6 +71,9 @@ public class CordovaWebViewImpl implements CordovaWebView {
 
     private Set<Integer> boundKeyCodes = new HashSet<Integer>();
 
+    protected boolean canReturnBackButton = true;
+    protected CCiProtectFinishCallBack finishCallBack = null;
+    
     public static CordovaWebViewEngine createEngine(Context context, CordovaPreferences preferences) {
         String className = preferences.getString("webview", SystemWebViewEngine.class.getCanonicalName());
         try {
@@ -135,6 +137,7 @@ public class CordovaWebViewImpl implements CordovaWebView {
         if (recreatePlugins) {
             // Don't re-initialize on first load.
             if (loadedUrl != null) {
+                appPlugin = null;
                 pluginManager.init();
             }
             loadedUrl = url;
@@ -244,7 +247,7 @@ public class CordovaWebViewImpl implements CordovaWebView {
     @Deprecated
     public void showCustomView(View view, WebChromeClient.CustomViewCallback callback) {
         // This code is adapted from the original Android Browser code, licensed under the Apache License, Version 2.0
-        Log.d(TAG, "showing Custom View");
+        LOG.d(TAG, "showing Custom View");
         // if a view already exists then immediately terminate the new one
         if (mCustomView != null) {
             callback.onCustomViewHidden();
@@ -275,7 +278,7 @@ public class CordovaWebViewImpl implements CordovaWebView {
     public void hideCustomView() {
         // This code is adapted from the original Android Browser code, licensed under the Apache License, Version 2.0
         if (mCustomView == null) return;
-        Log.d(TAG, "Hiding Custom View");
+        LOG.d(TAG, "Hiding Custom View");
 
         // Hide the custom view.
         mCustomView.setVisibility(View.GONE);
@@ -354,6 +357,7 @@ public class CordovaWebViewImpl implements CordovaWebView {
             case KeyEvent.KEYCODE_VOLUME_DOWN:
             case KeyEvent.KEYCODE_VOLUME_UP:
             case KeyEvent.KEYCODE_BACK:
+            case KeyEvent.KEYCODE_MENU:
                 // TODO: Why are search and menu buttons handled separately?
                 if (override) {
                     boundKeyCodes.add(keyCode);
@@ -445,7 +449,10 @@ public class CordovaWebViewImpl implements CordovaWebView {
         // Resume JavaScript timers. This affects all webviews within the app!
         engine.setPaused(false);
         this.pluginManager.onResume(keepRunning);
-        // To be the same as other platforms, fire this event only when resumed after a "pause".
+
+        // In order to match the behavior of the other platforms, we only send onResume after an
+        // onPause has occurred. The resume event might still be sent if the Activity was killed
+        // while waiting for the result of an external Activity once the result is obtained
         if (hasPausedEver) {
             sendJavascriptEvent("resume");
         }
@@ -472,6 +479,11 @@ public class CordovaWebViewImpl implements CordovaWebView {
         // Cancel pending timeout timer.
         loadUrlTimeout++;
 
+        if (finishCallBack != null) {
+            finishCallBack.onFinished();
+            finishCallBack = null;
+        }
+        
         // Forward to plugins
         this.pluginManager.onDestroy();
 
@@ -484,6 +496,24 @@ public class CordovaWebViewImpl implements CordovaWebView {
         hideCustomView();
     }
 
+    public void setBackButtonState(boolean canReturnBackButton) {
+        this.canReturnBackButton = canReturnBackButton; 
+    }
+    
+    public void setBackButtonState(boolean canReturnBackButton, 
+            CCiProtectFinishCallBack finishCallBack) {
+        this.canReturnBackButton = canReturnBackButton; 
+        this.finishCallBack = finishCallBack;
+    }
+    
+    public void onInvisibilityChanged() {
+        if (finishCallBack != null) {
+            finishCallBack.onFinished();
+        }
+        canReturnBackButton = true;
+    }
+    
+    
     protected class EngineClient implements CordovaWebViewEngine.Client {
         @Override
         public void clearLoadTimeoutTimer() {
@@ -577,7 +607,16 @@ public class CordovaWebViewImpl implements CordovaWebView {
                             eventName = "menubutton";
                             break;
                         case KeyEvent.KEYCODE_BACK:
-                            eventName = "backbutton";
+                            // keyboardState 系统键盘  canReturnBackButton 侧边栏等屏蔽back
+                            if (!Config.keyboardState && canReturnBackButton) {
+                                eventName = "backbutton";
+                            } else {
+                                if (finishCallBack != null) {
+                                    finishCallBack.onFinished();
+                                    finishCallBack = null;
+                                }
+                                canReturnBackButton = true;
+                            }
                             break;
                     }
                     if (eventName != null) {
